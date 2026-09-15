@@ -1,0 +1,21 @@
+{
+  "name": "whitespace-se/wp-plugin-municipio-entra-oidc",
+  "description": "Microsoft Entra OIDC login policy and Municipio user-group mapping",
+  "type": "wordpress-muplugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "daggerhart/openid-connect-generic": "^3.11",
+    "php": ">=8.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Whitespace\\MunicipioEntraOidc\\": "src/"
+    }
+  },
+  "extra": {
+    "installer-name": "municipio-entra-oidc"
+  },
+  "scripts": {
+    "test": "@php tests/run.php"
+  }
+}
