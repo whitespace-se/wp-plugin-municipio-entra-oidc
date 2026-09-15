@@ -34,7 +34,9 @@ final class Plugin
         add_filter('openid-connect-generic-user-creation-test', [$this, 'authorizeOidcLogin'], 10, 2);
         add_action('openid-connect-generic-user-create', [$this, 'synchronizeUserGroup'], 10, 2);
         add_action('openid-connect-generic-update-user-using-current-claim', [$this, 'synchronizeUserGroup'], 10, 2);
-        add_filter('authenticate', [$this, 'blockPublicPasswordLogin'], 1, 3);
+        // Run after WordPress's username, email and application-password
+        // handlers so none of them can replace the network-policy error.
+        add_filter('authenticate', [$this, 'blockPublicPasswordLogin'], PHP_INT_MAX, 3);
     }
 
     public function configureOidcClient(object $settings): object

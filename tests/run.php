@@ -12,6 +12,25 @@ use Whitespace\MunicipioEntraOidc\Configuration;
 use Whitespace\MunicipioEntraOidc\NetworkMatcher;
 use Whitespace\MunicipioEntraOidc\Plugin;
 
+$registeredFilters = [];
+
+if (!function_exists('add_filter')) {
+    function add_filter(string $hook, mixed $callback, int $priority = 10, int $acceptedArgs = 1): bool
+    {
+        global $registeredFilters;
+        $registeredFilters[$hook][] = [$callback, $priority, $acceptedArgs];
+
+        return true;
+    }
+}
+
+if (!function_exists('add_action')) {
+    function add_action(string $hook, mixed $callback, int $priority = 10, int $acceptedArgs = 1): bool
+    {
+        return add_filter($hook, $callback, $priority, $acceptedArgs);
+    }
+}
+
 if (!class_exists('WP_Error')) {
     class WP_Error
     {
@@ -90,6 +109,14 @@ $publicPlugin = new Plugin(
     $networkMatcher,
     $claimMapper,
     ['REMOTE_ADDR' => '203.0.113.10', 'REQUEST_METHOD' => 'GET'],
+);
+$publicPlugin->register();
+$authenticateRegistration = $registeredFilters['authenticate'][0] ?? null;
+$assert(
+    is_array($authenticateRegistration)
+        && $authenticateRegistration[1] === PHP_INT_MAX
+        && $authenticateRegistration[2] === 3,
+    'The password policy must run after every core authentication handler.',
 );
 $vpnSettings = $vpnPlugin->configureOidcClient((object) []);
 $publicSettings = $publicPlugin->configureOidcClient((object) []);
