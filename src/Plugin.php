@@ -40,7 +40,9 @@ final class Plugin
     public function configureOidcClient(object $settings): object
     {
         // Never trigger automatic SSO from an incomplete configuration.
-        $settings->login_type = $this->configuration->isOidcConfigured() && !$this->isLocalLoginAllowed()
+        $settings->login_type = $this->configuration->isOidcConfigured()
+            && $this->configuration->isLoginPolicyEnforced()
+            && !$this->isLocalLoginAllowed()
             ? 'auto'
             : 'button';
         $settings->alternate_redirect_uri = 1;
@@ -144,7 +146,13 @@ final class Plugin
 
     public function blockPublicPasswordLogin(mixed $user, string $username, string $password): mixed
     {
-        if ($this->isLocalLoginAllowed() || !$this->isPasswordLoginRequest()) {
+        if (
+            !$this->configuration->isOidcConfigured()
+            || !$this->configuration->isLoginPolicyEnforced()
+            || $this->isLocalLoginAllowed()
+            || trim($username) === ''
+            || $password === ''
+        ) {
             return $user;
         }
 
@@ -184,16 +192,4 @@ final class Plugin
         );
     }
 
-    private function isPasswordLoginRequest(): bool
-    {
-        $server = $this->server ?? $_SERVER;
-        $method = isset($server['REQUEST_METHOD']) && is_string($server['REQUEST_METHOD'])
-            ? strtoupper($server['REQUEST_METHOD'])
-            : '';
-
-        return $method === 'POST'
-            && isset($GLOBALS['pagenow'])
-            && $GLOBALS['pagenow'] === 'wp-login.php'
-            && isset($_POST['log'], $_POST['pwd']);
-    }
 }

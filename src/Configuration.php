@@ -45,13 +45,20 @@ final class Configuration
 
     public function isOidcConfigured(): bool
     {
-        foreach (['OIDC_CLIENT_ID', 'OIDC_ENDPOINT_LOGIN_URL', 'OIDC_ENDPOINT_TOKEN_URL', 'OIDC_ENDPOINT_JWKS_URL', 'OIDC_ISSUER'] as $name) {
+        foreach (['OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_ENDPOINT_LOGIN_URL', 'OIDC_ENDPOINT_TOKEN_URL', 'OIDC_ENDPOINT_JWKS_URL', 'OIDC_ISSUER'] as $name) {
             if (!defined($name) || !is_string(constant($name)) || trim((string) constant($name)) === '') {
                 return false;
             }
         }
 
-        return $this->tenantId() !== '';
+        return $this->tenantId() !== '' && $this->userGroupMap() !== [];
+    }
+
+    public function isLoginPolicyEnforced(): bool
+    {
+        $value = $this->constant('MUNICIPIO_ENTRA_OIDC_ENFORCE_LOGIN_POLICY', false);
+
+        return $value === true || $value === 1 || $value === '1';
     }
 
     private function constant(string $name, mixed $fallback): mixed

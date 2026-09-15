@@ -27,6 +27,8 @@ Define configuration outside the repository before activating the integration:
 
 ```php
 define('MUNICIPIO_ENTRA_OIDC_TENANT_ID', '00000000-0000-0000-0000-000000000000');
+// Keep this off during parallel acceptance; switch to 1 for the final cutover.
+define('MUNICIPIO_ENTRA_OIDC_ENFORCE_LOGIN_POLICY', 0);
 define('MUNICIPIO_ENTRA_OIDC_LOCAL_LOGIN_ALLOWED_IPS', [
     '178.73.217.218',
     '2a02:752:0:18::16b5',
@@ -43,6 +45,11 @@ define('MUNICIPIO_ENTRA_OIDC_LOGIN_BUTTON_TEXT', 'Logga in med Microsoft');
 Configure OpenID Connect Generic with a tenant-specific issuer, audience and
 JWKS endpoint. Use its alternate callback URI and keep existing-user linking
 disabled for protected local administrator accounts.
+
+Installing the package does not enforce redirect or password policy. Enforcement
+requires the explicit flag above, a complete OIDC client configuration and a
+non-empty authorization map. This keeps the normal login available while the
+Entra button is tested during a parallel acceptance period.
 
 Application roles are preferred. Assign the roles to existing Entra groups and
 map the emitted `roles` values above. A `groups` claim and group Object IDs can

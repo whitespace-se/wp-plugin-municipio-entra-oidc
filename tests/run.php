@@ -32,7 +32,9 @@ define('MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP', [
     'Nora.Employee' => 'Medarbetare',
 ]);
 define('MUNICIPIO_ENTRA_OIDC_LOGIN_BUTTON_TEXT', 'Logga in med Microsoft');
+define('MUNICIPIO_ENTRA_OIDC_ENFORCE_LOGIN_POLICY', 1);
 define('OIDC_CLIENT_ID', 'client-id');
+define('OIDC_CLIENT_SECRET', 'client-secret');
 define('OIDC_ENDPOINT_LOGIN_URL', 'https://login.example.test/authorize');
 define('OIDC_ENDPOINT_TOKEN_URL', 'https://login.example.test/token');
 define('OIDC_ENDPOINT_JWKS_URL', 'https://login.example.test/keys');
@@ -121,8 +123,6 @@ $assert(
     'A valid preferred username must provide a missing email claim for account creation.',
 );
 
-$GLOBALS['pagenow'] = 'wp-login.php';
-$_POST = ['log' => 'local-admin', 'pwd' => 'not-a-real-password'];
 $publicPostPlugin = new Plugin(
     $configuration,
     $networkMatcher,
@@ -142,6 +142,10 @@ $assert(
 $assert(
     $vpnPostPlugin->blockPublicPasswordLogin(null, 'local-admin', 'not-a-real-password') === null,
     'VPN WordPress password POST must remain available.',
+);
+$assert(
+    $publicPlugin->blockPublicPasswordLogin(null, 'local-admin', 'not-a-real-password') instanceof WP_Error,
+    'Password authentication outside wp-login.php must not bypass the network policy.',
 );
 
 if ($failures !== []) {
