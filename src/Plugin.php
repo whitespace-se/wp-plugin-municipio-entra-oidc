@@ -100,7 +100,11 @@ final class Plugin
      */
     public function authorizeOidcLogin(bool $authorized, array $claims): bool
     {
-        if (!$authorized || !$this->claimsBelongToConfiguredTenant($claims)) {
+        if (
+            !$authorized
+            || !$this->claimsBelongToConfiguredTenant($claims)
+            || $this->authorizationClaimHasOverage($claims)
+        ) {
             return false;
         }
 
@@ -176,22 +180,47 @@ final class Plugin
     /** @param array<string, mixed> $claims */
     private function claimsBelongToConfiguredTenant(array $claims): bool
     {
-        $tenantId = $this->configuration->tenantId();
+        $tenantId = $this->tenantIdFromClaims($claims);
 
-        return $tenantId !== ''
-            && isset($claims['tid'])
-            && is_string($claims['tid'])
-            && hash_equals(strtolower($tenantId), strtolower(trim($claims['tid'])));
+        return $tenantId !== null
+            && in_array($tenantId, $this->configuration->tenantIds(), true);
     }
 
     /** @param array<string, mixed> $claims */
     private function resolveUserGroup(array $claims): ?string
     {
+        $tenantId = $this->tenantIdFromClaims($claims);
+
+        if ($tenantId === null) {
+            return null;
+        }
+
         return $this->claimMapper->resolve(
             $claims,
             $this->configuration->authorizationClaim(),
-            $this->configuration->userGroupMap(),
+            $this->configuration->userGroupMapForTenant($tenantId),
         );
+    }
+
+    /** @param array<string, mixed> $claims */
+    private function tenantIdFromClaims(array $claims): ?string
+    {
+        if (!isset($claims['tid']) || !is_string($claims['tid'])) {
+            return null;
+        }
+
+        $tenantId = strtolower(trim($claims['tid']));
+
+        return $tenantId !== '' ? $tenantId : null;
+    }
+
+    /** @param array<string, mixed> $claims */
+    private function authorizationClaimHasOverage(array $claims): bool
+    {
+        $claimNames = $claims['_claim_names'] ?? null;
+
+        return is_array($claimNames)
+            && array_key_exists($this->configuration->authorizationClaim(), $claimNames);
     }
 
 }

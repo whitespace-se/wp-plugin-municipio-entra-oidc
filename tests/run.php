@@ -40,7 +40,7 @@ if (!class_exists('WP_Error')) {
     }
 }
 
-define('MUNICIPIO_ENTRA_OIDC_TENANT_ID', 'tenant-id');
+define('MUNICIPIO_ENTRA_OIDC_TENANT_ID', '11111111-1111-4111-8111-111111111111');
 define('MUNICIPIO_ENTRA_OIDC_LOCAL_LOGIN_ALLOWED_IPS', [
     '178.73.217.218',
     '2a02:752:0:18::16b5',
@@ -125,7 +125,7 @@ $assert($publicSettings->login_type === 'auto', 'Public login must redirect auto
 $assert($publicSettings->alternate_redirect_uri === 1, 'The callback must use the clean alternate URI.');
 $assert($publicSettings->identity_key === 'oid', 'The Entra object ID must be used as plugin identity.');
 $assert(
-    $publicPlugin->authorizeOidcLogin(true, ['tid' => 'TENANT-ID', 'roles' => ['Nora.Employee']]),
+    $publicPlugin->authorizeOidcLogin(true, ['tid' => '11111111-1111-4111-8111-111111111111', 'roles' => ['Nora.Employee']]),
     'A mapped role from the configured tenant must be authorized.',
 );
 $assert(
@@ -137,12 +137,83 @@ $assert(
     'An unmapped role must be rejected.',
 );
 $assert(
-    is_array($publicPlugin->authorizeIdTokenClaims(['tid' => 'tenant-id', 'roles' => ['Nora.Editor']])),
+    is_array($publicPlugin->authorizeIdTokenClaims(['tid' => '11111111-1111-4111-8111-111111111111', 'roles' => ['Nora.Editor']])),
     'An authorized ID-token claim must pass through.',
 );
 $assert(
     $publicPlugin->authorizeIdTokenClaims(['tid' => 'other-tenant', 'roles' => ['Nora.Editor']]) instanceof WP_Error,
     'An unauthorized ID-token claim must be rejected before user lookup and login.',
+);
+
+$tenantA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+$tenantB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+$multiTenantConfiguration = new Configuration([
+    'MUNICIPIO_ENTRA_OIDC_ALLOWED_TENANT_IDS' => [strtoupper($tenantA), $tenantB, 'not-a-tenant-id', $tenantA],
+    'MUNICIPIO_ENTRA_OIDC_AUTHORIZATION_CLAIM' => 'groups',
+    'MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP' => [
+        $tenantA => [
+            'group-a' => 'Nora',
+            'shared-looking-group' => 'Nora shared',
+        ],
+        $tenantB => [
+            'group-b' => 'Brandkåren',
+        ],
+    ],
+]);
+$multiTenantPlugin = new Plugin($multiTenantConfiguration, $networkMatcher, $claimMapper);
+$assert(
+    $multiTenantConfiguration->tenantIds() === [$tenantA, $tenantB],
+    'Tenant IDs must be normalized, validated and deduplicated.',
+);
+$assert(
+    $multiTenantPlugin->authorizeOidcLogin(true, ['tid' => $tenantA, 'groups' => ['group-a']]),
+    'A mapped group from the first allowed tenant must be authorized.',
+);
+$assert(
+    $multiTenantPlugin->authorizeOidcLogin(true, ['tid' => $tenantB, 'groups' => ['group-b']]),
+    'A mapped group from the second allowed tenant must be authorized.',
+);
+$assert(
+    !$multiTenantPlugin->authorizeOidcLogin(true, ['tid' => $tenantB, 'groups' => ['shared-looking-group']]),
+    'A mapping from one tenant must never authorize the same claim value from another tenant.',
+);
+$assert(
+    !$multiTenantPlugin->authorizeOidcLogin(true, ['tid' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'groups' => ['group-a']]),
+    'A tenant outside the explicit allowlist must be rejected.',
+);
+$assert(
+    !$multiTenantPlugin->authorizeOidcLogin(true, [
+        'tid' => $tenantA,
+        'groups' => ['group-a'],
+        '_claim_names' => ['groups' => 'src1'],
+    ]),
+    'A groups overage response must fail closed even if a groups value is also present.',
+);
+$assert(
+    !$multiTenantPlugin->authorizeOidcLogin(true, ['tid' => $tenantA]),
+    'A missing groups claim must fail closed.',
+);
+$unsafeFlatMultiTenantConfiguration = new Configuration([
+    'MUNICIPIO_ENTRA_OIDC_ALLOWED_TENANT_IDS' => [$tenantA, $tenantB],
+    'MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP' => ['group-a' => 'Nora'],
+]);
+$assert(
+    $unsafeFlatMultiTenantConfiguration->userGroupMapForTenant($tenantA) === [],
+    'A flat map must not be reused across multiple tenants.',
+);
+$incompleteMultiTenantConfiguration = new Configuration([
+    'MUNICIPIO_ENTRA_OIDC_ALLOWED_TENANT_IDS' => [$tenantA, $tenantB],
+    'MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP' => [$tenantA => ['group-a' => 'Nora']],
+    'OIDC_CLIENT_ID' => 'client-id',
+    'OIDC_CLIENT_SECRET' => 'client-secret',
+    'OIDC_ENDPOINT_LOGIN_URL' => 'https://login.example.test/authorize',
+    'OIDC_ENDPOINT_TOKEN_URL' => 'https://login.example.test/token',
+    'OIDC_ENDPOINT_JWKS_URL' => 'https://login.example.test/keys',
+    'OIDC_ISSUER' => 'https://login.example.test/issuer',
+]);
+$assert(
+    !$incompleteMultiTenantConfiguration->isOidcConfigured(),
+    'Automatic enforcement must remain disabled until every allowed tenant has a mapping.',
 );
 $normalizedClaims = $publicPlugin->normalizeUserClaim(['preferred_username' => 'person@example.test']);
 $assert(
