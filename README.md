@@ -6,8 +6,6 @@ Client, WordPress roles and Municipio user groups.
 The plugin does not implement OIDC. It adds fail-closed policy around the
 GPL-licensed `daggerhart/openid-connect-generic` protocol client:
 
-- loading its required protocol client early from the must-use integration, so
-  no separate database activation step can be missed;
 - automatic Entra redirect for public requests to the canonical WordPress login
   URL;
 - normal WordPress password login on that same URL from configured networks;

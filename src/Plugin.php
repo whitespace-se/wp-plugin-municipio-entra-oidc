@@ -164,7 +164,7 @@ final class Plugin
             'municipio-entra-oidc-login',
             plugins_url('assets/login.css', dirname(__DIR__) . '/municipio-entra-oidc.php'),
             [],
-            '0.3.1',
+            '0.3.2',
         );
     }
 
