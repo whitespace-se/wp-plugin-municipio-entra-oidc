@@ -1,0 +1,51 @@
+body.login .openid-connect-login-button {
+    margin: 0 0 22px !important;
+    text-align: center;
+}
+
+body.login .openid-connect-login-button .button {
+    align-items: center;
+    background: #0067b8;
+    border: 1px solid #0067b8;
+    border-radius: 4px;
+    box-shadow: none;
+    color: #fff;
+    display: flex;
+    font-size: 15px;
+    font-weight: 600;
+    justify-content: center;
+    min-height: 46px;
+    padding: 8px 18px;
+    text-shadow: none;
+    width: 100%;
+}
+
+body.login .openid-connect-login-button .button:hover,
+body.login .openid-connect-login-button .button:focus {
+    background: #005a9e;
+    border-color: #005a9e;
+    color: #fff;
+}
+
+body.login .openid-connect-login-button .button:focus {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0067b8;
+    outline: 2px solid transparent;
+}
+
+body.login .municipio-entra-local-login-separator {
+    align-items: center;
+    color: #646970;
+    display: flex;
+    font-size: 13px;
+    gap: 12px;
+    margin: 0 0 20px;
+    text-align: center;
+}
+
+body.login .municipio-entra-local-login-separator::before,
+body.login .municipio-entra-local-login-separator::after {
+    background: #c3c4c7;
+    content: "";
+    flex: 1;
+    height: 1px;
+}

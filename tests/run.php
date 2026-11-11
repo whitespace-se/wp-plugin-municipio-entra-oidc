@@ -40,6 +40,12 @@ if (!class_exists('WP_Error')) {
     }
 }
 
+if (!class_exists('OpenID_Connect_Generic')) {
+    class OpenID_Connect_Generic
+    {
+    }
+}
+
 define('MUNICIPIO_ENTRA_OIDC_TENANT_ID', '11111111-1111-4111-8111-111111111111');
 define('MUNICIPIO_ENTRA_OIDC_LOCAL_LOGIN_ALLOWED_IPS', [
     '178.73.217.218',
@@ -214,6 +220,77 @@ $incompleteMultiTenantConfiguration = new Configuration([
 $assert(
     !$incompleteMultiTenantConfiguration->isOidcConfigured(),
     'Automatic enforcement must remain disabled until every allowed tenant has a mapping.',
+);
+
+$defaultRoleConfiguration = new Configuration([
+    'MUNICIPIO_ENTRA_OIDC_ALLOWED_TENANT_IDS' => [$tenantA, $tenantB],
+    'MUNICIPIO_ENTRA_OIDC_AUTHORIZATION_CLAIM' => 'groups',
+    'MUNICIPIO_ENTRA_OIDC_DEFAULT_ROLE_MAP' => [
+        $tenantA => 'subscriber',
+        $tenantB => 'subscriber',
+    ],
+    'MUNICIPIO_ENTRA_OIDC_ROLE_MAP' => [
+        $tenantA => [
+            'admin-a' => 'administrator',
+            'editor-a' => 'editor',
+        ],
+        $tenantB => [
+            'admin-b' => 'administrator',
+            'editor-b' => 'editor',
+        ],
+    ],
+    'OIDC_CLIENT_ID' => 'client-id',
+    'OIDC_CLIENT_SECRET' => 'client-secret',
+    'OIDC_ENDPOINT_LOGIN_URL' => 'https://login.example.test/authorize',
+    'OIDC_ENDPOINT_TOKEN_URL' => 'https://login.example.test/token',
+    'OIDC_ENDPOINT_JWKS_URL' => 'https://login.example.test/keys',
+    'OIDC_ISSUER' => 'https://login.example.test/issuer',
+]);
+$defaultRolePlugin = new Plugin($defaultRoleConfiguration, $networkMatcher, $claimMapper);
+$assert(
+    $defaultRoleConfiguration->isOidcConfigured(),
+    'A default role must be a complete tenant authorization rule.',
+);
+$assert(
+    $defaultRolePlugin->authorizeOidcLogin(true, ['tid' => $tenantA]),
+    'Every valid account in a tenant with a default role must be authorized.',
+);
+$assert(
+    !$defaultRolePlugin->authorizeOidcLogin(true, ['tid' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc']),
+    'A default role must never authorize an unknown tenant.',
+);
+
+$subscriber = new class {
+    public int $ID = 1;
+    public ?string $role = null;
+
+    public function set_role(string $role): void
+    {
+        $this->role = $role;
+    }
+};
+$editor = clone $subscriber;
+$administrator = clone $subscriber;
+$overageUser = clone $subscriber;
+$defaultRolePlugin->synchronizeWordPressRole($subscriber, ['tid' => $tenantA]);
+$defaultRolePlugin->synchronizeWordPressRole($editor, ['tid' => $tenantA, 'groups' => ['editor-a']]);
+$defaultRolePlugin->synchronizeWordPressRole($administrator, ['tid' => $tenantA, 'groups' => ['editor-a', 'admin-a']]);
+$defaultRolePlugin->synchronizeWordPressRole($overageUser, [
+    'tid' => $tenantA,
+    'groups' => ['admin-a'],
+    '_claim_names' => ['groups' => 'src1'],
+]);
+$assert($subscriber->role === 'subscriber', 'A user without a mapped group must receive the tenant default role.');
+$assert($editor->role === 'editor', 'An editor group must elevate the user to editor.');
+$assert($administrator->role === 'administrator', 'Mapping declaration order must make administrator win over editor.');
+$assert($overageUser->role === 'subscriber', 'Group overage must fall back to subscriber and never elevate a user.');
+$assert(
+    str_contains($defaultRolePlugin->appendLocalLoginSeparator(''), 'municipio-entra-local-login-separator'),
+    'The Entra button area must be separated from the fallback WordPress form.',
+);
+$assert(
+    substr_count($defaultRolePlugin->appendLocalLoginSeparator('<div class="municipio-entra-local-login-separator"></div>'), 'municipio-entra-local-login-separator') === 1,
+    'The fallback separator must not be added twice.',
 );
 $normalizedClaims = $publicPlugin->normalizeUserClaim(['preferred_username' => 'person@example.test']);
 $assert(

@@ -34,6 +34,10 @@ final class Plugin
         add_filter('openid-connect-generic-user-creation-test', [$this, 'authorizeOidcLogin'], 10, 2);
         add_action('openid-connect-generic-user-create', [$this, 'synchronizeUserGroup'], 10, 2);
         add_action('openid-connect-generic-update-user-using-current-claim', [$this, 'synchronizeUserGroup'], 10, 2);
+        add_action('openid-connect-generic-user-create', [$this, 'synchronizeWordPressRole'], 20, 2);
+        add_action('openid-connect-generic-update-user-using-current-claim', [$this, 'synchronizeWordPressRole'], 20, 2);
+        add_action('login_enqueue_scripts', [$this, 'enqueueLoginStyles']);
+        add_filter('login_message', [$this, 'appendLocalLoginSeparator'], 100);
         // Run after WordPress's username, email and application-password
         // handlers so none of them can replace the network-policy error.
         add_filter('authenticate', [$this, 'blockPublicPasswordLogin'], PHP_INT_MAX, 3);
@@ -100,15 +104,84 @@ final class Plugin
      */
     public function authorizeOidcLogin(bool $authorized, array $claims): bool
     {
-        if (
-            !$authorized
-            || !$this->claimsBelongToConfiguredTenant($claims)
-            || $this->authorizationClaimHasOverage($claims)
-        ) {
+        if (!$authorized || !$this->claimsBelongToConfiguredTenant($claims)) {
             return false;
         }
 
-        return $this->resolveUserGroup($claims) !== null;
+        $tenantId = $this->tenantIdFromClaims($claims);
+
+        if ($tenantId === null) {
+            return false;
+        }
+
+        // A tenant default explicitly authorizes every valid account in that
+        // tenant. Group overage can then only remove an elevation, never grant
+        // one, so the user safely falls back to the default role.
+        if ($this->configuration->defaultRoleForTenant($tenantId) !== null) {
+            return true;
+        }
+
+        if ($this->authorizationClaimHasOverage($claims)) {
+            return false;
+        }
+
+        return $this->resolveWordPressRole($claims) !== null
+            || $this->resolveUserGroup($claims) !== null;
+    }
+
+    /**
+     * @param mixed                $user
+     * @param array<string, mixed> $claims
+     */
+    public function synchronizeWordPressRole(mixed $user, array $claims): void
+    {
+        $userId = is_object($user) && isset($user->ID) ? (int) $user->ID : 0;
+        $role = $this->resolveWordPressRole($claims);
+
+        if ($userId < 1 || $role === null || !is_object($user) || !method_exists($user, 'set_role')) {
+            return;
+        }
+
+        if (function_exists('get_role') && get_role($role) === null) {
+            return;
+        }
+
+        $user->set_role($role);
+    }
+
+    public function enqueueLoginStyles(): void
+    {
+        if (
+            !$this->configuration->isOidcConfigured()
+            || !class_exists('OpenID_Connect_Generic')
+            || !function_exists('wp_enqueue_style')
+            || !function_exists('plugins_url')
+        ) {
+            return;
+        }
+
+        wp_enqueue_style(
+            'municipio-entra-oidc-login',
+            plugins_url('assets/login.css', dirname(__DIR__) . '/municipio-entra-oidc.php'),
+            [],
+            '0.3.0',
+        );
+    }
+
+    public function appendLocalLoginSeparator(string $message): string
+    {
+        if (
+            !$this->configuration->isOidcConfigured()
+            || !class_exists('OpenID_Connect_Generic')
+            || str_contains($message, 'municipio-entra-local-login-separator')
+        ) {
+            return $message;
+        }
+
+        return $message
+            . '<div class="municipio-entra-local-login-separator" aria-hidden="true">'
+            . '<span>eller</span>'
+            . '</div>';
     }
 
     /**
@@ -200,6 +273,30 @@ final class Plugin
             $this->configuration->authorizationClaim(),
             $this->configuration->userGroupMapForTenant($tenantId),
         );
+    }
+
+    /** @param array<string, mixed> $claims */
+    private function resolveWordPressRole(array $claims): ?string
+    {
+        $tenantId = $this->tenantIdFromClaims($claims);
+
+        if ($tenantId === null) {
+            return null;
+        }
+
+        $defaultRole = $this->configuration->defaultRoleForTenant($tenantId);
+
+        if ($this->authorizationClaimHasOverage($claims)) {
+            return $defaultRole;
+        }
+
+        $mappedRole = $this->claimMapper->resolve(
+            $claims,
+            $this->configuration->authorizationClaim(),
+            $this->configuration->roleMapForTenant($tenantId),
+        );
+
+        return $mappedRole ?? $defaultRole;
     }
 
     /** @param array<string, mixed> $claims */

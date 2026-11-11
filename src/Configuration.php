@@ -27,6 +27,22 @@ final class Configuration
         return is_array($value) ? $value : [];
     }
 
+    /** @return array<mixed, mixed> */
+    public function roleMap(): array
+    {
+        $value = $this->constant('MUNICIPIO_ENTRA_OIDC_ROLE_MAP', []);
+
+        return is_array($value) ? $value : [];
+    }
+
+    /** @return array<mixed, mixed> */
+    public function defaultRoleMap(): array
+    {
+        $value = $this->constant('MUNICIPIO_ENTRA_OIDC_DEFAULT_ROLE_MAP', []);
+
+        return is_array($value) ? $value : [];
+    }
+
     public function authorizationClaim(): string
     {
         $value = $this->constant('MUNICIPIO_ENTRA_OIDC_AUTHORIZATION_CLAIM', 'roles');
@@ -69,8 +85,35 @@ final class Configuration
     /** @return array<mixed, mixed> */
     public function userGroupMapForTenant(string $tenantId): array
     {
-        $mapping = $this->userGroupMap();
+        return $this->tenantScopedMap($this->userGroupMap(), $tenantId);
+    }
 
+    /** @return array<mixed, mixed> */
+    public function roleMapForTenant(string $tenantId): array
+    {
+        return $this->tenantScopedMap($this->roleMap(), $tenantId);
+    }
+
+    public function defaultRoleForTenant(string $tenantId): ?string
+    {
+        foreach ($this->defaultRoleMap() as $configuredTenantId => $role) {
+            if (
+                is_string($configuredTenantId)
+                && hash_equals(strtolower(trim($configuredTenantId)), strtolower(trim($tenantId)))
+            ) {
+                return $this->normalizeRole($role);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<mixed, mixed> $mapping
+     * @return array<mixed, mixed>
+     */
+    private function tenantScopedMap(array $mapping, string $tenantId): array
+    {
         foreach ($mapping as $configuredTenantId => $tenantMapping) {
             if (
                 is_string($configuredTenantId)
@@ -99,7 +142,9 @@ final class Configuration
     public function isOidcConfigured(): bool
     {
         foreach (['OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_ENDPOINT_LOGIN_URL', 'OIDC_ENDPOINT_TOKEN_URL', 'OIDC_ENDPOINT_JWKS_URL', 'OIDC_ISSUER'] as $name) {
-            if (!defined($name) || !is_string(constant($name)) || trim((string) constant($name)) === '') {
+            $value = $this->constant($name, '');
+
+            if (!is_string($value) || trim($value) === '') {
                 return false;
             }
         }
@@ -109,7 +154,11 @@ final class Configuration
         }
 
         foreach ($this->tenantIds() as $tenantId) {
-            if ($this->userGroupMapForTenant($tenantId) === []) {
+            if (
+                $this->defaultRoleForTenant($tenantId) === null
+                && $this->roleMapForTenant($tenantId) === []
+                && $this->userGroupMapForTenant($tenantId) === []
+            ) {
                 return false;
             }
         }
@@ -136,5 +185,16 @@ final class Configuration
     private function isTenantId(string $tenantId): bool
     {
         return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $tenantId) === 1;
+    }
+
+    private function normalizeRole(mixed $role): ?string
+    {
+        if (!is_string($role)) {
+            return null;
+        }
+
+        $role = strtolower(trim($role));
+
+        return $role !== '' && preg_match('/^[a-z0-9_-]+$/D', $role) === 1 ? $role : null;
     }
 }

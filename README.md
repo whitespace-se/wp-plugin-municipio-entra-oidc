@@ -1,7 +1,7 @@
 # Municipio Entra OIDC
 
 Shared WordPress integration between Microsoft Entra ID, OpenID Connect Generic
-Client and Municipio user groups.
+Client, WordPress roles and Municipio user groups.
 
 The plugin does not implement OIDC. It adds fail-closed policy around the
 GPL-licensed `daggerhart/openid-connect-generic` protocol client:
@@ -12,9 +12,11 @@ GPL-licensed `daggerhart/openid-connect-generic` protocol client:
 - server-side rejection of public password login attempts;
 - tenant validation in addition to the OIDC client's issuer and audience
   validation;
-- deterministic Entra app-role or group mapping to Municipio's `user_group`
-  taxonomy;
-- just-in-time user creation only when a configured authorization claim matches.
+- a default WordPress role for every authenticated user in an allowed tenant;
+- deterministic Entra app-role or group mapping to elevated WordPress roles and,
+  where needed, Municipio's `user_group` taxonomy;
+- a styled Entra button above the normal WordPress login form during parallel
+  acceptance.
 
 Authorization is applied at the validated ID-token boundary for both new and
 returning users. OpenID Connect Generic 3.11.3 documents a
@@ -36,17 +38,25 @@ define('MUNICIPIO_ENTRA_OIDC_LOCAL_LOGIN_ALLOWED_IPS', [
     '178.73.217.218',
     '2a02:752:0:18::16b5',
 ]);
-define('MUNICIPIO_ENTRA_OIDC_AUTHORIZATION_CLAIM', 'roles');
-define('MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP', [
+define('MUNICIPIO_ENTRA_OIDC_AUTHORIZATION_CLAIM', 'groups');
+define('MUNICIPIO_ENTRA_OIDC_DEFAULT_ROLE_MAP', [
+    '00000000-0000-0000-0000-000000000001' => 'subscriber',
+    '00000000-0000-0000-0000-000000000002' => 'subscriber',
+]);
+define('MUNICIPIO_ENTRA_OIDC_ROLE_MAP', [
     '00000000-0000-0000-0000-000000000001' => [
         // Declaration order within each tenant is priority order.
-        'Municipio.Editor' => 'Redaktör',
-        'Municipio.Employee' => 'Medarbetare',
+        '00000000-0000-0000-0000-000000000101' => 'administrator',
+        '00000000-0000-0000-0000-000000000102' => 'editor',
     ],
     '00000000-0000-0000-0000-000000000002' => [
-        'Municipio.Employee' => 'Medarbetare',
+        '00000000-0000-0000-0000-000000000201' => 'administrator',
+        '00000000-0000-0000-0000-000000000202' => 'editor',
     ],
 ]);
+// Optional: map the same claim to Municipio user-group terms when a site uses
+// that taxonomy for content targeting.
+define('MUNICIPIO_ENTRA_OIDC_USER_GROUP_MAP', []);
 define('MUNICIPIO_ENTRA_OIDC_LOGIN_BUTTON_TEXT', 'Logga in med Microsoft');
 ```
 
@@ -56,14 +66,16 @@ disabled for protected local administrator accounts.
 
 Installing the package does not enforce redirect or password policy. Enforcement
 requires the explicit flag above, a complete OIDC client configuration and a
-non-empty authorization map for every allowed tenant. This keeps the normal
-login available while the Entra button is tested during a parallel acceptance
-period.
+tenant authorization rule for every allowed tenant. A default role authorizes
+every valid account in that tenant; role and user-group maps can instead be used
+for claim-only authorization. This keeps the normal login available while the
+Entra button is tested during a parallel acceptance period.
 
-Application roles are preferred. Assign the roles to existing Entra groups and
-map the emitted `roles` values above. A `groups` claim and group Object IDs can
-be used instead, but Entra group-overage responses are deliberately not resolved
-by this plugin and must be avoided or handled separately.
+Application roles are preferred for new integrations. Existing Entra group
+Object IDs can also be mapped from the `groups` claim. If a default role is
+configured, an Entra group-overage response safely falls back to that role and
+never grants an elevated role. Without a default role, group overage is rejected
+because the authorization claim cannot be evaluated safely.
 
 Mappings are scoped by tenant so a claim value from one tenant cannot inherit a
 different tenant's authorization. Unknown tenants, missing claims and Entra

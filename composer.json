@@ -1,6 +1,6 @@
 {
   "name": "whitespace-se/wp-plugin-municipio-entra-oidc",
-  "description": "Microsoft Entra OIDC login policy and Municipio user-group mapping",
+  "description": "Microsoft Entra OIDC login policy, WordPress role mapping and Municipio user-group mapping",
   "type": "wordpress-muplugin",
   "license": "GPL-2.0-or-later",
   "require": {
