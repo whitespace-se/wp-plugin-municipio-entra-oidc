@@ -31,6 +31,13 @@ if (!function_exists('add_action')) {
     }
 }
 
+if (!function_exists('site_url')) {
+    function site_url(string $path = ''): string
+    {
+        return 'https://example.test/wp' . $path;
+    }
+}
+
 if (!class_exists('WP_Error')) {
     class WP_Error
     {
@@ -117,6 +124,12 @@ $publicPlugin = new Plugin(
     ['REMOTE_ADDR' => '203.0.113.10', 'REQUEST_METHOD' => 'GET'],
 );
 $publicPlugin->register();
+$parseRequestRegistration = $registeredFilters['parse_request'][0] ?? null;
+$assert(
+    is_array($parseRequestRegistration)
+        && $parseRequestRegistration[1] === 0,
+    'The subdirectory callback normalizer must run before the upstream callback handler.',
+);
 $authenticateRegistration = $registeredFilters['authenticate'][0] ?? null;
 $assert(
     is_array($authenticateRegistration)
@@ -130,6 +143,24 @@ $assert($vpnSettings->login_type === 'button', 'VPN login must retain the WordPr
 $assert($publicSettings->login_type === 'auto', 'Public login must redirect automatically to Entra.');
 $assert($publicSettings->alternate_redirect_uri === 1, 'The callback must use the clean alternate URI.');
 $assert($publicSettings->identity_key === 'oid', 'The Entra object ID must be used as plugin identity.');
+$subdirectoryCallback = (object) [
+    'request' => 'wp/openid-connect-authorize',
+    'query_vars' => [],
+];
+$publicPlugin->normalizeAlternateRedirectRequest($subdirectoryCallback);
+$assert(
+    ($subdirectoryCallback->query_vars['openid-connect-authorize'] ?? null) === '1',
+    'The clean callback must be recognized when WordPress core lives in a subdirectory.',
+);
+$unrelatedRequest = (object) [
+    'request' => 'wp/unrelated-page',
+    'query_vars' => [],
+];
+$publicPlugin->normalizeAlternateRedirectRequest($unrelatedRequest);
+$assert(
+    !isset($unrelatedRequest->query_vars['openid-connect-authorize']),
+    'An unrelated request must never be converted into an authentication callback.',
+);
 $assert(
     $publicPlugin->authorizeOidcLogin(true, ['tid' => '11111111-1111-4111-8111-111111111111', 'roles' => ['Nora.Employee']]),
     'A mapped role from the configured tenant must be authorized.',

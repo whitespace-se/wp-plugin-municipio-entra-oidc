@@ -27,6 +27,11 @@ final class Plugin
 
     public function register(): void
     {
+        // WordPress may live in a subdirectory while the public front
+        // controller lives at the document root. In that layout, the
+        // upstream rewrite pattern omits the site-url prefix and its clean
+        // callback never receives the expected query variable.
+        add_action('parse_request', [$this, 'normalizeAlternateRedirectRequest'], 0);
         add_filter('openid-connect-generic-settings', [$this, 'configureOidcClient'], PHP_INT_MAX);
         add_filter('openid-connect-generic-login-button-text', [$this, 'loginButtonText']);
         add_filter('openid-connect-modify-id-token-claim-before-validation', [$this, 'authorizeIdTokenClaims']);
@@ -58,6 +63,32 @@ final class Plugin
         $settings->displayname_format = '{name}';
 
         return $settings;
+    }
+
+    public function normalizeAlternateRedirectRequest(mixed $request): void
+    {
+        if (
+            !$this->configuration->isOidcConfigured()
+            || !is_object($request)
+            || !isset($request->request)
+            || !is_string($request->request)
+            || !isset($request->query_vars)
+            || !is_array($request->query_vars)
+            || !function_exists('site_url')
+        ) {
+            return;
+        }
+
+        $callbackPath = parse_url(site_url('/openid-connect-authorize'), PHP_URL_PATH);
+
+        if (
+            !is_string($callbackPath)
+            || trim($request->request, '/') !== trim($callbackPath, '/')
+        ) {
+            return;
+        }
+
+        $request->query_vars['openid-connect-authorize'] = '1';
     }
 
     public function loginButtonText(string $text): string
@@ -164,7 +195,7 @@ final class Plugin
             'municipio-entra-oidc-login',
             plugins_url('assets/login.css', dirname(__DIR__) . '/municipio-entra-oidc.php'),
             [],
-            '0.3.2',
+            '0.3.3',
         );
     }
 

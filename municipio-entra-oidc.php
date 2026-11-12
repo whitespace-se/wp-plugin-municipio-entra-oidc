@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Municipio Entra OIDC
  * Description: Enforces Microsoft Entra OIDC login policy and maps authorization claims to WordPress roles and Municipio user groups.
- * Version: 0.3.2
+ * Version: 0.3.3
  * Requires PHP: 8.0
  * License: GPL-2.0-or-later
  */
