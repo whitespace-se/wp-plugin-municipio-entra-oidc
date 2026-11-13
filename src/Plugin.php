@@ -37,6 +37,8 @@ final class Plugin
         add_filter('openid-connect-modify-id-token-claim-before-validation', [$this, 'authorizeIdTokenClaims']);
         add_filter('openid-connect-generic-alter-user-claim', [$this, 'normalizeUserClaim']);
         add_filter('openid-connect-generic-user-creation-test', [$this, 'authorizeOidcLogin'], 10, 2);
+        add_action('openid-connect-generic-user-create', [$this, 'synchronizeUserProfile'], 5, 2);
+        add_action('openid-connect-generic-update-user-using-current-claim', [$this, 'synchronizeUserProfile'], 5, 2);
         add_action('openid-connect-generic-user-create', [$this, 'synchronizeUserGroup'], 10, 2);
         add_action('openid-connect-generic-update-user-using-current-claim', [$this, 'synchronizeUserGroup'], 10, 2);
         add_action('openid-connect-generic-user-create', [$this, 'synchronizeWordPressRole'], 20, 2);
@@ -180,6 +182,56 @@ final class Plugin
         $user->set_role($role);
     }
 
+    /**
+     * Keep the local Municipio profile readable while the immutable Entra
+     * object ID remains the account's technical WordPress login.
+     *
+     * @param mixed                $user
+     * @param array<string, mixed> $claims
+     */
+    public function synchronizeUserProfile(mixed $user, array $claims): void
+    {
+        $userId = is_object($user) && isset($user->ID) ? (int) $user->ID : 0;
+
+        if ($userId < 1 || !$this->claimsBelongToConfiguredTenant($claims) || !function_exists('wp_update_user')) {
+            return;
+        }
+
+        $name = $this->profileClaim($claims, 'name');
+        $firstName = $this->profileClaim($claims, 'given_name');
+        $lastName = $this->profileClaim($claims, 'family_name');
+
+        if ($name === null && $firstName === null && $lastName === null) {
+            return;
+        }
+
+        $userData = ['ID' => $userId];
+
+        if ($firstName !== null) {
+            $userData['first_name'] = $firstName;
+        }
+
+        if ($lastName !== null) {
+            $userData['last_name'] = $lastName;
+        }
+
+        if ($name !== null) {
+            $userData['display_name'] = $name;
+
+            // Municipio's account header prefers first/last name and otherwise
+            // falls back to the technical login. Entra may provide only the
+            // full `name` claim, so retain that as a readable first-name
+            // fallback rather than exposing the object ID.
+            if ($firstName === null && $lastName === null) {
+                $userData['first_name'] = $name;
+            }
+        } elseif ($firstName !== null || $lastName !== null) {
+            $userData['display_name'] = trim(($firstName ?? '') . ' ' . ($lastName ?? ''));
+        }
+
+        wp_update_user($userData);
+    }
+
     public function enqueueLoginStyles(): void
     {
         if (
@@ -195,7 +247,7 @@ final class Plugin
             'municipio-entra-oidc-login',
             plugins_url('assets/login.css', dirname(__DIR__) . '/municipio-entra-oidc.php'),
             [],
-            '0.3.3',
+            '0.3.4',
         );
     }
 
@@ -279,6 +331,18 @@ final class Plugin
             : '';
 
         return $this->networkMatcher->matches($address, $this->configuration->localLoginNetworks());
+    }
+
+    /** @param array<string, mixed> $claims */
+    private function profileClaim(array $claims, string $key): ?string
+    {
+        if (!isset($claims[$key]) || !is_string($claims[$key])) {
+            return null;
+        }
+
+        $value = trim($claims[$key]);
+
+        return $value !== '' ? $value : null;
     }
 
     /** @param array<string, mixed> $claims */

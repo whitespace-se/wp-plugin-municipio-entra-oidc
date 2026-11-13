@@ -13,6 +13,7 @@ use Whitespace\MunicipioEntraOidc\NetworkMatcher;
 use Whitespace\MunicipioEntraOidc\Plugin;
 
 $registeredFilters = [];
+$updatedUsers = [];
 
 if (!function_exists('add_filter')) {
     function add_filter(string $hook, mixed $callback, int $priority = 10, int $acceptedArgs = 1): bool
@@ -35,6 +36,17 @@ if (!function_exists('site_url')) {
     function site_url(string $path = ''): string
     {
         return 'https://example.test/wp' . $path;
+    }
+}
+
+if (!function_exists('wp_update_user')) {
+    /** @param array<string, mixed> $userData */
+    function wp_update_user(array $userData): int
+    {
+        global $updatedUsers;
+        $updatedUsers[] = $userData;
+
+        return (int) ($userData['ID'] ?? 0);
     }
 }
 
@@ -136,6 +148,17 @@ $assert(
         && $authenticateRegistration[1] === PHP_INT_MAX
         && $authenticateRegistration[2] === 3,
     'The password policy must run after every core authentication handler.',
+);
+$profileCreateRegistration = $registeredFilters['openid-connect-generic-user-create'][0] ?? null;
+$profileUpdateRegistration = $registeredFilters['openid-connect-generic-update-user-using-current-claim'][0] ?? null;
+$assert(
+    is_array($profileCreateRegistration)
+        && $profileCreateRegistration[1] === 5
+        && $profileCreateRegistration[2] === 2
+        && is_array($profileUpdateRegistration)
+        && $profileUpdateRegistration[1] === 5
+        && $profileUpdateRegistration[2] === 2,
+    'Profile claims must synchronize before Municipio groups and WordPress roles.',
 );
 $vpnSettings = $vpnPlugin->configureOidcClient((object) []);
 $publicSettings = $publicPlugin->configureOidcClient((object) []);
@@ -328,6 +351,42 @@ $assert(
     isset($normalizedClaims['email']) && $normalizedClaims['email'] === 'person@example.test',
     'A valid preferred username must provide a missing email claim for account creation.',
 );
+$profileUser = (object) ['ID' => 42];
+$updatedUsers = [];
+$publicPlugin->synchronizeUserProfile($profileUser, [
+    'tid' => '11111111-1111-4111-8111-111111111111',
+    'name' => 'Ada Lovelace',
+    'given_name' => 'Ada',
+    'family_name' => 'Lovelace',
+]);
+$assert(
+    ($updatedUsers[0] ?? null) === [
+        'ID' => 42,
+        'first_name' => 'Ada',
+        'last_name' => 'Lovelace',
+        'display_name' => 'Ada Lovelace',
+    ],
+    'Verified Entra profile claims must update the local WordPress profile.',
+);
+$updatedUsers = [];
+$publicPlugin->synchronizeUserProfile($profileUser, [
+    'tid' => '11111111-1111-4111-8111-111111111111',
+    'name' => 'Single Claim Name',
+]);
+$assert(
+    ($updatedUsers[0] ?? null) === [
+        'ID' => 42,
+        'display_name' => 'Single Claim Name',
+        'first_name' => 'Single Claim Name',
+    ],
+    'A full name claim must remain readable when Entra omits given and family names.',
+);
+$updatedUsers = [];
+$publicPlugin->synchronizeUserProfile($profileUser, [
+    'tid' => '22222222-2222-4222-8222-222222222222',
+    'name' => 'Wrong Tenant',
+]);
+$assert($updatedUsers === [], 'Profile data from an unconfigured tenant must fail closed.');
 
 $publicPostPlugin = new Plugin(
     $configuration,
